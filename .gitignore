@@ -1,0 +1,16 @@
+.venv/
+node_modules/
+__pycache__/
+.pytest_cache/
+/backend/modules/clef-flash-4bit/
+/backend/modules/nb-whisper-small/
+norway-gtfs/
+.promptfoo/
+results*.json
+.superpowers/
+.DS_Store
+.env
+*.m4a
+/notes/
+/CLAUDE.md
+/.claude/

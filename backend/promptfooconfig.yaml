@@ -1,0 +1,56 @@
+description: journey classifier
+prompts:
+  - "{{query}}"
+providers:
+  - id: python:journey_provider.py
+    label: clef
+    config:
+      pythonExecutable: .venv/bin/python
+      env: { JOURNEY_BACKEND: clef }
+  - id: python:journey_provider.py
+    label: laya
+    config:
+      pythonExecutable: .venv/bin/python
+      env: { JOURNEY_BACKEND: clef, CLEF_URL: "http://127.0.0.1:8002/v1/systemone" }
+  - id: python:journey_provider.py
+    label: d1
+    config:
+      pythonExecutable: .venv/bin/python
+      env: { JOURNEY_BACKEND: d1, CLEF_URL: "http://127.0.0.1:8003/v1/decisions" }
+  - id: python:journey_provider.py
+    label: winnow
+    config:
+      pythonExecutable: .venv/bin/python
+      env: { JOURNEY_BACKEND: clef, CLEF_URL: "http://127.0.0.1:8091/v1/systemone", JOURNEY_MODEL: Winnow-12B }
+  - id: python:journey_provider.py
+    label: h2o
+    config:
+      pythonExecutable: .venv/bin/python
+      env: { JOURNEY_BACKEND: clef, CLEF_URL: "http://127.0.0.1:8741/v1/systemone", JOURNEY_MODEL: h2oai/h2o-lightning-4b }
+  - id: python:journey_provider.py
+    label: ollama-qwen
+    config:
+      pythonExecutable: .venv/bin/python
+      env: { JOURNEY_BACKEND: openai, OPENAI_BASE_URL: "http://localhost:11434/v1", JOURNEY_MODEL: "qwen3:8b" }
+  - id: python:journey_provider.py
+    label: claude
+    config:
+      pythonExecutable: .venv/bin/python
+      env: { JOURNEY_BACKEND: anthropic, JOURNEY_MODEL: claude-haiku-5-5 }
+defaultTest:
+  vars:
+    now: "2026-10-07T12:35:00+02:00"
+  assert:
+    - type: javascript
+      value: "(output.injection === (context.vars.injection === true)) || { pass: false, score: 0, reason: 'injection flag wrong' }"
+    - type: javascript
+      value: "(context.vars.from_ok ? context.vars.from_ok.split(',').includes(output.from) : output.from === null) || { pass: false, score: 0, reason: `from=${output.from} retrievable=${output.retrievable.from}` }"
+    - type: javascript
+      value: "(context.vars.to_ok ? context.vars.to_ok.split(',').includes(output.to) : output.to === null) || { pass: false, score: 0, reason: `to=${output.to} retrievable=${output.retrievable.to}` }"
+    - type: javascript
+      value: "(output.time.mode === (context.vars.time_mode || 'now')) || { pass: false, score: 0, reason: `mode=${output.time.mode} expected=${context.vars.time_mode || 'now'}` }"
+    - type: javascript
+      value: "(output.time.at === (context.vars.time_at || null)) || { pass: false, score: 0, reason: `at=${output.time.at} expected=${context.vars.time_at || null}` }"
+evaluateOptions:
+  maxConcurrency: 1
+tests: file://cases.yaml

@@ -1,0 +1,95 @@
+[tools]
+uv = "0.13.5"
+pnpm = "11.28.6"
+cloudflared = "2026.10.3"
+"pipx:huggingface-hub" = "1.33.0"
+
+[tasks.setup]
+description = "Install dependencies and download models + stop data"
+run = [
+  "cd backend && uv sync && pnpm install",
+  "pnpm --dir web install",
+  { task = "fetch-stops" },
+  { task = "fetch-clef" },
+  { task = "fetch-whisper" },
+]
+
+[tasks.fetch-clef]
+dir = "{{config_root}}/backend"
+description = "Download the Clef classifier (~6 GB) into backend/modules/clef-flash-4bit"
+run = "hf download mlx-community/clef-flash-4bit --revision 140bf7e037f5fa95a96535feca112f46c15927cf --local-dir modules/clef-flash-4bit"
+
+[tasks.fetch-whisper]
+dir = "{{config_root}}/backend"
+description = "Download the Norwegian Whisper model (voice input, optional) into backend/modules/nb-whisper-small"
+run = "hf download FredrikKarlssonSpeech/nb-whisper-small-mlx --revision b175b02c9ea0039dbfb596422974c1139d5d0fcc --local-dir modules/nb-whisper-small"
+
+[tasks.fetch-stops]
+dir = "{{config_root}}/backend"
+description = "Download Entur's current stop places (GTFS) into backend/norway-gtfs/"
+run = """
+tmp=$(mktemp -d)
+curl -fsSL -o "$tmp/stops.zip" https://storage.googleapis.com/marduk-production/tiamat/Current_latest-gtfs.zip
+rm -rf norway-gtfs
+unzip -q "$tmp/stops.zip" -d norway-gtfs
+rm -rf "$tmp"
+"""
+
+[tasks.clef]
+dir = "{{config_root}}/backend"
+description = "Clef classifier on :8000"
+run = "uv run --project . python modules/clef-flash-4bit/clef_mlx.py serve --port 8000 --no-truncate"
+
+[tasks.laya]
+dir = "{{config_root}}/backend"
+description = "Laya (multilingual) on :8002; use with CLEF_URL=http://127.0.0.1:8002/v1/systemone"
+env = { LAYA_HOST = "127.0.0.1", LAYA_PORT = "8002", LAYA_MODELS = "multilingual", LAYA_DEFAULT_MODEL = "multilingual" }
+run = "uvx --from 'laya[serve]' laya-serve"
+
+[tasks.journey]
+dir = "{{config_root}}/backend"
+description = "Journey HTTP endpoint on :8001"
+run = "until curl -s -o /dev/null ${CLEF_URL:-localhost:8000/}; do sleep 1; done; uv run python journey_server.py"
+
+[tasks.web]
+description = "Web app, production build on :3000"
+dir = "{{config_root}}/web"
+run = "pnpm build && exec pnpm start"
+
+[tasks.web-dev]
+description = "Web app, dev server on :3000"
+dir = "{{config_root}}/web"
+run = "pnpm dev"
+
+[tasks.demo]
+description = "Clef + journey + web together"
+depends = ["clef", "journey", "web"]
+
+[tasks.demo-laya]
+description = "Laya + journey + web together (journey pointed at Laya)"
+run = "CLEF_URL=http://127.0.0.1:8002/v1/systemone mise run laya ::: journey ::: web"
+
+[tasks.eval]
+dir = "{{config_root}}/backend"
+description = "Full promptfoo suite against live Clef (starts and stops its own Clef; results.json)"
+run = """
+uv run --project . python modules/clef-flash-4bit/clef_mlx.py serve --port 8000 --no-truncate >/dev/null 2>&1 &
+clef=$!
+trap 'kill $clef' EXIT
+until curl -s -o /dev/null localhost:8000/; do sleep 1; done
+uv run pytest -q && pnpm exec promptfoo eval --no-cache --filter-providers clef -o results.json
+"""
+
+[tasks.eval-view]
+dir = "{{config_root}}/backend"
+description = "Browse promptfoo results per case on :15500"
+run = "pnpm exec promptfoo view --port 15500"
+
+[tasks.tunnel]
+description = "Public https URL + QR for the web app on :3000 (cloudflared quick tunnel)"
+run = """
+cloudflared tunnel --url http://localhost:3000 2>&1 | while read -r line; do
+  url=$(printf '%s' "$line" | grep -o 'https://[a-z0-9-]*\\.trycloudflare\\.com' | grep -v '//api\\.' || true)
+  if [ -n "$url" ]; then echo "$url"; uvx --from qrcode qr --ascii "$url"; fi
+done
+"""
